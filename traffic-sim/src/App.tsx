@@ -58,6 +58,17 @@ interface HospitalBuildingData {
   variant: 1 | 2 | 3;
 }
 
+type ZoneType = "downtown" | "mixed" | "residential";
+
+interface ZoneProfile {
+  minCount: number;
+  maxCount: number;
+  emptyChance: number;
+  jitter: number;
+  sizeScale: number;
+  largeChance: number;
+}
+
 const SPACING = 40;
 const GRID = 9;
 const ROAD_W = 10;
@@ -88,12 +99,54 @@ const PALETTE = [
 ];
 
 const BUILDING_COLORS = ["#8d99ae", "#6c757d", "#778da9", "#495057", "#7f8c8d"];
-const BLOCK_OFFSETS: Array<[number, number]> = [
-  [-8, -8],
-  [8, -8],
-  [-8, 8],
-  [8, 8],
+
+const GLOBAL_BUILDING_KEEP_RATIO = 0.78;
+const CELL_INNER_HALF = SPACING / 2 - ROAD_W / 2 - 1.2;
+const BUILDING_GAP = 1.2;
+
+const IRREGULAR_OFFSET_PATTERNS: Array<Array<[number, number]>> = [
+  [
+    [-9.5, -7.5],
+    [-2.8, -8.8],
+    [6.4, -4.8],
+    [8.7, 3.2],
+    [0.8, 8.6],
+  ],
+  [
+    [-8.8, 5.9],
+    [-3.6, 0.7],
+    [1.8, -5.6],
+    [8.5, -8.2],
+    [9.2, 1.7],
+    [3.8, 8.3],
+  ],
+  [
+    [-8.2, -1.6],
+    [-0.9, -8.8],
+    [5.6, -2.2],
+    [9.3, 6.7],
+  ],
+  [
+    [-9.1, 8.1],
+    [-5.6, 1.8],
+    [0.7, 0.4],
+    [6.1, -2.5],
+    [9.1, -8.3],
+  ],
+  [
+    [-8.6, -8.1],
+    [-5.3, -0.9],
+    [-1.2, 6.3],
+    [4.8, 8.8],
+    [8.9, 1.3],
+  ],
 ];
+
+const ZONE_PROFILES: Record<ZoneType, ZoneProfile> = {
+  downtown: { minCount: 3, maxCount: 5, emptyChance: 0.06, jitter: 1.8, sizeScale: 1.2, largeChance: 0.32 },
+  mixed: { minCount: 2, maxCount: 4, emptyChance: 0.15, jitter: 2.2, sizeScale: 1, largeChance: 0.18 },
+  residential: { minCount: 1, maxCount: 3, emptyChance: 0.22, jitter: 2.7, sizeScale: 0.86, largeChance: 0.08 },
+};
 
 function hash01(seed: number): number {
   const x = Math.sin(seed * 12.9898) * 43758.5453;
@@ -125,6 +178,10 @@ function dirFromSeed(seed: number): Dir {
 
 function randomDir(): Dir {
   return Math.random() > 0.5 ? 1 : -1;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function Car({ seed }: CarProps) {
@@ -526,11 +583,20 @@ function Cross({ x, z }: CrossProps) {
 }
 
 function TrafficSignal({ x, z, phaseOffset }: TrafficSignalProps) {
-  const redRef = useRef<Mesh>(null!);
-  const yellowRef = useRef<Mesh>(null!);
-  const greenRef = useRef<Mesh>(null!);
+  const redRefs = useRef<Array<Mesh | null>>([]);
+  const yellowRefs = useRef<Array<Mesh | null>>([]);
+  const greenRefs = useRef<Array<Mesh | null>>([]);
 
-  const setEmissive = (mesh: Mesh, intensity: number) => {
+  const cornerOffset = ROAD_W * 0.34;
+  const signalCorners = [
+    { dx: cornerOffset, dz: cornerOffset, rotY: (-3 * Math.PI) / 4 },
+    { dx: -cornerOffset, dz: cornerOffset, rotY: (3 * Math.PI) / 4 },
+    { dx: cornerOffset, dz: -cornerOffset, rotY: -Math.PI / 4 },
+    { dx: -cornerOffset, dz: -cornerOffset, rotY: Math.PI / 4 },
+  ];
+
+  const setEmissive = (mesh: Mesh | null, intensity: number) => {
+    if (!mesh) return;
     const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
     const lightMaterial = material as unknown as { emissiveIntensity: number };
     lightMaterial.emissiveIntensity = intensity;
@@ -539,37 +605,62 @@ function TrafficSignal({ x, z, phaseOffset }: TrafficSignalProps) {
   useFrame(({ clock }) => {
     const phase = Math.floor(((clock.getElapsedTime() + phaseOffset) / SIGNAL_CYCLE_SECONDS) % 3);
 
-    setEmissive(redRef.current, phase === 0 ? 1.35 : 0.08);
-    setEmissive(yellowRef.current, phase === 1 ? 1.35 : 0.08);
-    setEmissive(greenRef.current, phase === 2 ? 1.35 : 0.08);
+    const redIntensity = phase === 0 ? 1.35 : 0.08;
+    const yellowIntensity = phase === 1 ? 1.35 : 0.08;
+    const greenIntensity = phase === 2 ? 1.35 : 0.08;
+
+    for (let i = 0; i < signalCorners.length; i += 1) {
+      setEmissive(redRefs.current[i], redIntensity);
+      setEmissive(yellowRefs.current[i], yellowIntensity);
+      setEmissive(greenRefs.current[i], greenIntensity);
+    }
   });
 
   return (
-    <group position={[x + ROAD_W * 0.34, 0, z + ROAD_W * 0.34]}>
-      <mesh position={[0, 2.4, 0]} castShadow>
-        <cylinderGeometry args={[0.3, 0.3, 4.8, 14]} />
-        <meshStandardMaterial color="#3d3d3d" />
-      </mesh>
+    <group>
+      {signalCorners.map((corner, idx) => (
+        <group key={idx} position={[x + corner.dx, 0, z + corner.dz]} rotation={[0, corner.rotY, 0]}>
+          <mesh position={[0, 2.4, 0]} castShadow>
+            <cylinderGeometry args={[0.3, 0.3, 4.8, 14]} />
+            <meshStandardMaterial color="#3d3d3d" />
+          </mesh>
 
-      <mesh position={[0, 4.8, 0]} castShadow>
-        <boxGeometry args={[1.5, 3, 1.1]} />
-        <meshStandardMaterial color="#111111" />
-      </mesh>
+          <mesh position={[0, 4.8, 0]} castShadow>
+            <boxGeometry args={[1.5, 3, 1.1]} />
+            <meshStandardMaterial color="#111111" />
+          </mesh>
 
-      <mesh ref={redRef} position={[0, 5.6, 0.6]}>
-        <sphereGeometry args={[0.32, 14, 14]} />
-        <meshStandardMaterial color="#ff2b2b" emissive="#ff2b2b" emissiveIntensity={0.12} />
-      </mesh>
+          <mesh
+            ref={(mesh) => {
+              redRefs.current[idx] = mesh;
+            }}
+            position={[0, 5.6, 0.6]}
+          >
+            <sphereGeometry args={[0.32, 14, 14]} />
+            <meshStandardMaterial color="#ff2b2b" emissive="#ff2b2b" emissiveIntensity={0.12} />
+          </mesh>
 
-      <mesh ref={yellowRef} position={[0, 4.8, 0.6]}>
-        <sphereGeometry args={[0.32, 14, 14]} />
-        <meshStandardMaterial color="#ffd166" emissive="#ffd166" emissiveIntensity={0.12} />
-      </mesh>
+          <mesh
+            ref={(mesh) => {
+              yellowRefs.current[idx] = mesh;
+            }}
+            position={[0, 4.8, 0.6]}
+          >
+            <sphereGeometry args={[0.32, 14, 14]} />
+            <meshStandardMaterial color="#ffd166" emissive="#ffd166" emissiveIntensity={0.12} />
+          </mesh>
 
-      <mesh ref={greenRef} position={[0, 4, 0.6]}>
-        <sphereGeometry args={[0.32, 14, 14]} />
-        <meshStandardMaterial color="#06d6a0" emissive="#06d6a0" emissiveIntensity={0.12} />
-      </mesh>
+          <mesh
+            ref={(mesh) => {
+              greenRefs.current[idx] = mesh;
+            }}
+            position={[0, 4, 0.6]}
+          >
+            <sphereGeometry args={[0.32, 14, 14]} />
+            <meshStandardMaterial color="#06d6a0" emissive="#06d6a0" emissiveIntensity={0.12} />
+          </mesh>
+        </group>
+      ))}
     </group>
   );
 }
@@ -647,6 +738,7 @@ function HospitalBuilding({ data }: { data: HospitalBuildingData }) {
 function generateCity() {
   const normalBuildings: BlockBuilding[] = [];
   const hospitals: HospitalBuildingData[] = [];
+  const cityCenterIndex = (GRID - 2) / 2;
 
   const hospitalCells = [
     { ix: 1, iz: 1, variant: 1 as const, accent: "#d90429" },
@@ -677,23 +769,87 @@ function generateCity() {
         continue;
       }
 
-      BLOCK_OFFSETS.forEach(([ox, oz], blockIndex) => {
-        const seed = ix * 997 + iz * 131 + blockIndex * 17;
-        const width = 3.8 + hash01(seed + 0.2) * 2.4;
-        const depth = 3.8 + hash01(seed + 0.5) * 2.4;
-        const height = 7 + hash01(seed + 0.9) * 22;
-        const jitterX = (hash01(seed + 1.3) - 0.5) * 1.4;
-        const jitterZ = (hash01(seed + 1.7) - 0.5) * 1.4;
+      const seedBase = ix * 997 + iz * 131;
+      const dx = ix - cityCenterIndex;
+      const dz = iz - cityCenterIndex;
+      const centerFalloff = Math.sqrt(dx * dx + dz * dz) / cityCenterIndex;
+      const zoneRoll = hash01(seedBase + 0.37) - centerFalloff * 0.28;
 
-        normalBuildings.push({
-          x: cx + ox + jitterX,
-          z: cz + oz + jitterZ,
+      let zone: ZoneType;
+      if (zoneRoll > 0.48) {
+        zone = "downtown";
+      } else if (zoneRoll > 0.12) {
+        zone = "mixed";
+      } else {
+        zone = "residential";
+      }
+
+      const profile = ZONE_PROFILES[zone];
+      if (hash01(seedBase + 0.61) < profile.emptyChance) {
+        continue;
+      }
+
+      const pattern = pickBySeed(IRREGULAR_OFFSET_PATTERNS, seedBase + 0.93);
+      const rawCount =
+        profile.minCount +
+        Math.floor(hash01(seedBase + 1.27) * (profile.maxCount - profile.minCount + 1));
+      const targetCount = Math.max(1, Math.min(pattern.length, rawCount));
+      const shuffledOffsets = pattern
+        .map((offset, idx) => ({
+          offset,
+          idx,
+          rank: hash01(seedBase + 1.8 + idx * 0.29),
+        }))
+        .sort((a, b) => a.rank - b.rank)
+        .slice(0, targetCount);
+
+      const cellBuildings: BlockBuilding[] = [];
+
+      for (const slot of shuffledOffsets) {
+        const slotSeed = seedBase + slot.idx * 17.3;
+        if (hash01(slotSeed + 0.13) > GLOBAL_BUILDING_KEEP_RATIO) {
+          continue;
+        }
+
+        const isLarge = hash01(slotSeed + 0.19) < profile.largeChance;
+        const sizeBand = isLarge ? 1.55 : 0.82 + hash01(slotSeed + 0.23) * 0.55;
+        const width = (3.4 + hash01(slotSeed + 0.31) * 3.8) * profile.sizeScale * sizeBand;
+        const depth = (3.2 + hash01(slotSeed + 0.47) * 3.9) * profile.sizeScale * sizeBand;
+        const heightBase = isLarge ? 17 : 6.5;
+        const heightSpan = isLarge ? 21 : 17;
+        const height = (heightBase + hash01(slotSeed + 0.73) * heightSpan) * profile.sizeScale;
+
+        const jitterX = (hash01(slotSeed + 0.89) - 0.5) * profile.jitter;
+        const jitterZ = (hash01(slotSeed + 1.13) - 0.5) * profile.jitter;
+        const localX = slot.offset[0] + jitterX;
+        const localZ = slot.offset[1] + jitterZ;
+
+        const clampedX = clamp(localX, -CELL_INNER_HALF, CELL_INNER_HALF);
+        const clampedZ = clamp(localZ, -CELL_INNER_HALF, CELL_INNER_HALF);
+        const x = cx + clampedX;
+        const z = cz + clampedZ;
+
+        const overlaps = cellBuildings.some((existing) => {
+          const minDx = (existing.width + width) / 2 + BUILDING_GAP;
+          const minDz = (existing.depth + depth) / 2 + BUILDING_GAP;
+          return Math.abs(existing.x - x) < minDx && Math.abs(existing.z - z) < minDz;
+        });
+
+        if (overlaps) {
+          continue;
+        }
+
+        cellBuildings.push({
+          x,
+          z,
           width,
           depth,
           height,
-          color: pickBySeed(BUILDING_COLORS, seed + 2.1),
+          color: pickBySeed(BUILDING_COLORS, slotSeed + 1.49),
         });
-      });
+      }
+
+      normalBuildings.push(...cellBuildings);
     }
   }
 
