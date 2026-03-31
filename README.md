@@ -1,162 +1,221 @@
 # 🚑 AI-Powered Green Corridor System
 
-> Automated traffic signal orchestration system for emergency vehicle movement using CCTV-based tracking and real-time decision logic.
+> A real-time traffic orchestration system that automates green corridor creation for emergency vehicles using CCTV-based tracking, graph-based routing, and dynamic signal control.
 
 ---
 
-## 📌 Overview
+## 📌 Table of Contents
 
-This project simulates a **smart city traffic control system** that automatically creates and manages **green corridors** for emergency vehicles (e.g., ambulance transport between hospitals).
-
-The system replaces manual coordination with an **AI-driven, event-based pipeline** that:
-
-* Receives verified hospital requests
-* Computes optimal routes
-* Tracks ambulance movement via CCTV nodes
-* Dynamically controls traffic signals
-
----
-
-## 🎯 Problem Statement
-
-* Traffic signals are static and non-adaptive
-* Green corridors require manual coordination
-* Delays occur even during critical transport
-* No real-time synchronization between traffic infrastructure and emergency systems
+* Overview
+* Problem Statement
+* System Concept
+* How the System Works
+* Architecture
+* Core Modules
+* Simulation Approach
+* Tech Stack
+* Project Structure
+* Features
+* Design Decisions
+* Limitations
+* Future Scope
+* Conclusion
 
 ---
 
-## 💡 Solution
+## 🧠 Overview
 
-We designed a system that:
+Urban traffic systems are not designed to adapt to emergency scenarios in real time. Even though green corridors exist, they rely heavily on manual coordination between hospitals, traffic police, and control centers.
 
-* Automates **green corridor creation**
-* Uses **CCTV nodes as tracking points**
-* Implements **rolling signal control**
-* Provides a **real-time command center dashboard**
+This project proposes an **automated, AI-driven system** that eliminates manual delays by:
+
+* Taking **verified hospital requests**
+* Computing optimal routes using a **graph-based model**
+* Tracking ambulance movement via **CCTV nodes**
+* Dynamically controlling signals using a **rolling corridor strategy**
 
 ---
 
-## ⚙️ System Architecture
+## 🚨 Problem Statement
+
+Current emergency traffic management faces several limitations:
+
+* 🚫 Traffic signals operate on static timing
+* 🚫 Green corridors are manually coordinated
+* 🚫 No real-time tracking of ambulance movement
+* 🚫 Delays significantly impact critical transport (e.g., organ transfer)
+
+---
+
+## 💡 System Concept
+
+The system is designed as an **event-driven orchestration pipeline**, where:
+
+* Inputs are received from hospitals
+* CCTV nodes act as distributed sensing points
+* A central decision engine manages traffic signals
+
+> The key idea is to **separate perception (detection) from decision-making (control)**.
+
+---
+
+## ⚙️ How the System Works
 
 ```text
 Hospital Request
-        ↓
-Route Generation (Graph-based)
-        ↓
-CCTV Tracking (Event Layer)
-        ↓
+      ↓
+Route Calculation (Graph)
+      ↓
+CCTV-Based Tracking
+      ↓
 Dual Verification
-        ↓
+      ↓
 Decision Engine
-        ↓
+      ↓
+Rolling Green Corridor
+      ↓
 Traffic Signal Control
-        ↓
-Frontend Dashboard
 ```
 
 ---
 
-## 🧩 Core Components
+## 🏗️ System Architecture
 
-### 1. 🏥 Hospital Request Module
+### 1. Input Layer
 
-* Initiates corridor request
-* Provides source, destination, and ambulance ID
-
----
-
-### 2. 🗺️ City Graph Model
-
-* Intersections modeled as nodes (CCTV points)
-* Roads modeled as edges
-* Used for shortest path computation
+* Hospital-initiated emergency request
+* Optional: CCTV / model outputs
 
 ---
 
-### 3. 📡 CCTV Layer
+### 2. Routing Layer
 
-* Each node simulates a CCTV
+* City modeled as a graph
+* Nodes = CCTV intersections
+* Edges = roads
+
+Shortest path is computed using algorithms like:
+
+* A* (preferred)
+* BFS (for simulation)
+
+---
+
+### 3. Perception Layer
+
+* Each CCTV node runs the same detection logic
 * Detects ambulance presence
-* Generates events
+
+Example output:
+
+```json
+{
+  "cctv_id": "S7",
+  "ambulance": true,
+  "confidence": 0.93
+}
+```
 
 ---
 
-### 4. 🧠 Perception Layer
+### 4. Verification Layer
 
-* Ambulance detection model (CNN)
-* (Optional) traffic density model
+To ensure reliability, the system uses **dual validation**:
 
----
+* Hospital request (trusted source)
+* Sequential CCTV detections
 
-### 5. 🔐 Dual Verification System
+This prevents:
 
-Green corridor activates only when:
-
-* Valid hospital request exists
-* Ambulance is detected across CCTV nodes
+* False triggers
+* Random activations
 
 ---
 
-### 6. 🚦 Decision Engine
+### 5. Decision Engine
+
+The core brain of the system:
 
 * Controls signal states
-* Activates emergency priority
-* Implements rolling corridor
+* Activates emergency mode
+* Handles route updates
 
 ---
 
-### 7. 🔄 Rolling Green Corridor
+### 6. Rolling Green Corridor
 
-* Only current and next signals turn GREEN
-* Remaining signals stay RED
-* Moves dynamically with ambulance
+Instead of activating all signals:
 
----
+* Only **current + next intersections** are green
+* Corridor moves dynamically with ambulance
 
-### 8. 🖥️ Command Center Dashboard
-
-* 4×4 CCTV grid (70%)
-* Route tracking + logs (30%)
-* Real-time system visualization
-
----
-
-## 🔁 System Flow
+Example:
 
 ```text
-Input → Route → Detection → Verification → Control → Output
+Route: S3 → S7 → S9 → S12
+
+At S7:
+GREEN → S7, S9
+RED → others
 ```
+
+---
+
+### 7. Output Layer
+
+* Real-time signal updates
+* Event logs
+* Dashboard visualization
+
+---
+
+## 🖥️ Command Center Dashboard
+
+### Layout:
+
+* **Left (70%)** → 4×4 CCTV grid
+* **Right (30%)** → control panel
+
+---
+
+### Features:
+
+* CCTV status (Normal / Traffic / Emergency)
+* Route tracking (node-by-node)
+* Event logs (real-time updates)
+* Active request information
 
 ---
 
 ## 🧪 Simulation Approach
 
-Since real-world infrastructure is unavailable:
+Since real-world infrastructure is not available:
 
-* CCTV feeds are **simulated as event streams**
+* CCTV feeds are simulated as **event streams**
 * Ambulance movement is modeled as **graph traversal**
 * Signal updates are computed in real time
+
+> This allows accurate representation of system behavior without relying on external hardware.
 
 ---
 
 ## 🛠️ Tech Stack
 
-**Backend**
+### Backend
 
 * Python
 * FastAPI
 * WebSockets
 
-**Frontend**
+### Frontend
 
 * React.js
 * Tailwind CSS
 
-**AI Models**
+### AI Models
 
 * CNN (Ambulance detection)
-* (Optional) Traffic classification
+* Optional: traffic density classification
 
 ---
 
@@ -197,61 +256,57 @@ frontend/
 
 ---
 
-## 🚀 Features
+## 🚀 Key Features
 
 * Automated green corridor activation
-* Graph-based route planning
+* Graph-based route computation
 * CCTV-based ambulance tracking
 * Rolling traffic signal control
 * Real-time dashboard visualization
-* Event-driven backend architecture
+* Event-driven architecture
 
 ---
 
-## 🧪 How to Run
+## 🧠 Design Decisions
 
-### Backend
+* Focused on **system orchestration**, not just ML models
+* Used simulation to ensure **reliable demo execution**
+* Separated:
 
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload
-```
-
----
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
----
-
-## 📊 Demo Capabilities
-
-* Trigger hospital request
-* Visualize ambulance movement
-* Observe dynamic signal changes
-* Track events in real time
-
----
-
-## 🔮 Future Scope
-
-* Real CCTV integration
-* GPS + CCTV data fusion
-* Smart traffic signal hardware integration
-* Multi-ambulance conflict resolution
-* Automated accident detection and response
-* Vehicle violation detection (ANPR-based)
+  * perception (CNN)
+  * decision-making (logic engine)
 
 ---
 
 ## ⚠️ Limitations
 
 * Uses simulated CCTV inputs
-* Does not integrate real traffic hardware
-* AI models are not deployed in real-time pipeline
+* No integration with real traffic signal hardware
+* AI models are not deployed in real-time video pipeline
+
+---
+
+## 🔮 Future Scope
+
+* Real CCTV integration
+* GPS + CCTV fusion
+* Smart signal hardware integration
+* Multi-ambulance conflict handling
+* Automated accident detection
+* Vehicle violation detection (ANPR)
+
+---
+
+## 🏆 Conclusion
+
+This project demonstrates how **real-time traffic systems can be automated using AI and event-driven design**.
+
+Rather than focusing only on detection, it emphasizes:
+
+> **intelligent coordination, scalability, and real-world applicability**
+
+---
+
+## 👨‍💻 Authors
+
+* Team 405 Found
